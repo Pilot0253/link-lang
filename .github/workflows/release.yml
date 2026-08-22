@@ -408,8 +408,8 @@ jobs:
         shell: msys2 {0}
         run: |
           echo "Building Chain-Lang Windows x86_64"
-          mingw32-make -f makefile.win clean
-          mingw32-make -f makefile.win release
+          make -f makefile.win clean
+          make -f makefile.win release
 
       # ---------------------------------------------------------------
       # Verify Windows executable
