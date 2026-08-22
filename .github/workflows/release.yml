@@ -407,7 +407,6 @@ jobs:
       - name: Build Chain-Lang
         shell: msys2 {0}
         run: |
-          echo "Building Chain-Lang Windows x86_64"
           make -f makefile.win clean
           make -f makefile.win release
 

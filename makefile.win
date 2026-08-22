@@ -1,16 +1,15 @@
 CXX      := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -I./include -I./include/raylib -I./include/webview -DWEBVIEW_EDGE=1 -DWEBVIEW_STATIC
+CXXFLAGS := -std=c++17 -Wall -Wextra -I./include -I./include/raylib -I./include/webview
 LDFLAGS  := -L./lib/win_x86_64 -lraylib -lopengl32 -lgdi32 -lwinmm -lws2_32 -lole32 -loleaut32 -ladvapi32 -lversion -luuid -lshlwapi -lwebview2loader -static-libgcc -static-libstdc++
 
 TARGET   := chainlang.exe
-BINPATH  := $(abspath $(TARGET))
 SRCDIR   := src
 OBJDIR   := obj
 
 SRCS := $(wildcard $(SRCDIR)/*.cpp)
 OBJS := $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(SRCS))
 
-.PHONY: all build clean run debug release
+.PHONY: all build clean release
 
 all: build
 
@@ -25,17 +24,11 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR):
-	@mkdir -p $(OBJDIR) 2>/dev/null || mkdir $(OBJDIR) 2>nul || true
-
-debug: CXXFLAGS += -g -O0 -DDEBUG
-debug: build
+	@mkdir -p $(OBJDIR)
 
 release: CXXFLAGS += -O2 -DNDEBUG
 release: build
 
-run: build
-	@./$(TARGET)
-
 clean:
-	@rm -rf $(OBJDIR) $(TARGET) error.txt 2>/dev/null || (if exist $(OBJDIR) rmdir /s /q $(OBJDIR) & if exist $(TARGET) del /f /q $(TARGET)) || true
+	@rm -rf $(OBJDIR) $(TARGET) error.txt
 	@echo Cleaned.

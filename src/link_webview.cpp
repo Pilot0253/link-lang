@@ -1,7 +1,26 @@
 #ifndef CHAIN_DISABLE_WEBVIEW
 
-#define WEBVIEW_EDGE 1
 #include "link_webview.h"
+
+// --- Deteksi Backend Otomatis per OS ---
+#if defined(_WIN32) || defined(_WIN64)
+    #ifndef WEBVIEW_EDGE
+        #define WEBVIEW_EDGE 1
+    #endif
+    #ifndef WEBVIEW_STATIC
+        #define WEBVIEW_STATIC
+    #endif
+#elif defined(__linux__) || defined(__unix__)
+    #ifndef WEBVIEW_GTK
+        #define WEBVIEW_GTK 1
+    #endif
+#elif defined(__APPLE__)
+    #ifndef WEBVIEW_COCOA
+        #define WEBVIEW_COCOA 1
+    #endif
+#endif
+
+// Include webview header (menggunakan path include tunggal)
 #include "webview/webview.h"
 #include <iostream>
 #include <fstream>
