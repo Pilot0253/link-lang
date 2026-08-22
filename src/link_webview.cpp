@@ -1,7 +1,8 @@
 #ifndef CHAIN_DISABLE_WEBVIEW
 
+#define WEBVIEW_EDGE 1
 #include "link_webview.h"
-#include "webview.h"
+#include "webview/webview.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem> 

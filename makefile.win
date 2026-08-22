@@ -1,7 +1,7 @@
 CXX      := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -I./include
+CXXFLAGS := -std=c++17 -Wall -Wextra -I./include -I./include/raylib -I./include/webview -DWEBVIEW_EDGE=1 -DWEBVIEW_STATIC
+LDFLAGS  := -L./lib/win_x86_64 -lraylib -lopengl32 -lgdi32 -lwinmm -lws2_32 -lole32 -loleaut32 -ladvapi32 -lversion -luuid -lshlwapi -lwebview2loader -static-libgcc -static-libstdc++
 
-LDFLAGS  := -lraylib -lgdi32 -lwinmm -lws2_32 -lole32 -loleaut32 -ladvapi32 -lversion -luuid -lwebview2loader -static-libgcc -static-libstdc++
 TARGET   := chainlang.exe
 BINPATH  := $(abspath $(TARGET))
 SRCDIR   := src
@@ -17,17 +17,15 @@ all: build
 build: $(TARGET)
 
 $(TARGET): $(OBJS)
-	@echo "Linking $(TARGET)..."
-	@$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@ 2>> error.txt && \
-		echo "Build successful!" || \
-		(echo "Build failed — see error.txt" && exit 1)
+	@echo Linking $(TARGET)...
+	@$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@ 2>> error.txt && (echo Build successful!) || (echo Build failed -- see error.txt && exit 1)
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
-	@echo "  Compiling $<..."
+	@echo Compiling $<...
 	@$(CXX) $(CXXFLAGS) -c $< -o $@ 2>> error.txt
 
 $(OBJDIR):
-	@mkdir -p $(OBJDIR)
+	@if not exist $(OBJDIR) mkdir $(OBJDIR)
 
 debug: CXXFLAGS += -g -O0 -DDEBUG
 debug: build
@@ -39,5 +37,7 @@ run: build
 	@./$(TARGET)
 
 clean:
-	@rm -rf $(OBJDIR) $(TARGET) error.txt
-	@echo "Cleaned."
+	@if exist $(OBJDIR) rmdir /s /q $(OBJDIR)
+	@if exist $(TARGET) del /f /q $(TARGET)
+	@if exist error.txt del /f /q error.txt
+	@echo Cleaned.

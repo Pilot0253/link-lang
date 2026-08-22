@@ -1,6 +1,7 @@
 # ==========================================
 # Environment Variables (SANGAT PENTING!)
 # ==========================================
+-p
 obj/
 build/
 chainlang

@@ -373,7 +373,7 @@ jobs:
           path: dist/chainlang-linux-riscv64.tar.gz
 
 
-  # ---------------------------------------------------------------------
+ # ---------------------------------------------------------------------
   # Windows x86_64
   # ---------------------------------------------------------------------
   build-windows-x86_64:
@@ -388,7 +388,7 @@ jobs:
         shell: bash
         run: bash scripts/stamp-version.sh "${{ needs.prepare.outputs.version }}" "${{ needs.prepare.outputs.release_label }}"
 
-      # MSYS2 provides MinGW64 GCC and make
+      # MSYS2 provides MinGW64 GCC toolchain and make
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -400,45 +400,14 @@ jobs:
             make
             file
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-webview2-loader
 
       # ---------------------------------------------------------------
-      # Build raylib for Windows
-      # ---------------------------------------------------------------
-      - name: Build raylib
-        shell: msys2 {0}
-        run: |
-          git clone \
-            --depth 1 \
-            --branch ${{ env.RAYLIB_VERSION }} \
-            https://github.com/raysan5/raylib.git
-
-          cmake \
-            -S raylib \
-            -B raylib/build \
-            -G "MSYS Makefiles" \
-            -DPLATFORM=Desktop \
-            -DBUILD_EXAMPLES=OFF \
-            -DCMAKE_BUILD_TYPE=Release
-
-          cmake --build raylib/build -j2
-
-          cmake \
-            --install raylib/build \
-            --prefix /mingw64
-
-      # ---------------------------------------------------------------
-      # IMPORTANT:
-      # Windows uses makefile.win
-      # NOT the Linux makefile.
+      # Build Chain-Lang using local include/ and lib/ assets
       # ---------------------------------------------------------------
       - name: Build Chain-Lang
         shell: msys2 {0}
         run: |
           echo "Building Chain-Lang Windows x86_64"
-
           mingw32-make -f makefile.win clean
           mingw32-make -f makefile.win release
 
@@ -464,16 +433,18 @@ jobs:
           }
 
       # ---------------------------------------------------------------
-      # Package
+      # Package (Include binary, runtime DLL, README, LICENSE)
       # ---------------------------------------------------------------
       - name: Package
         shell: msys2 {0}
         run: |
           mkdir -p dist
+          cp lib/win_x86_64/WebView2Loader.dll ./ 2>/dev/null || true
 
           tar -czf \
             dist/chainlang-windows-x86_64.tar.gz \
             chainlang.exe \
+            WebView2Loader.dll \
             README.md \
             LICENSE
 
