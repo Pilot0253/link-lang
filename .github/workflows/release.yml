@@ -402,13 +402,40 @@ jobs:
             mingw-w64-x86_64-toolchain
 
       # ---------------------------------------------------------------
-      # Build Chain-Lang using local include/ and lib/ assets
+      # Build Chain-Lang directly with GCC on MSYS2
       # ---------------------------------------------------------------
       - name: Build Chain-Lang
         shell: msys2 {0}
         run: |
-          make -f makefile.win clean
-          make -f makefile.win release
+          echo "Building Chain-Lang Windows x86_64"
+          
+          # Clean previous build artifacts
+          rm -rf obj chainlang.exe
+          mkdir -p obj
+
+          # Compile all source files
+          for file in src/*.cpp; do
+            obj="obj/$(basename "$file" .cpp).o"
+            echo "Compiling $file -> $obj"
+            g++ -std=c++17 -O2 -DNDEBUG -Wall -Wextra \
+                -I./include \
+                -I./include/raylib \
+                -I./include/webview \
+                -DWEBVIEW_EDGE=1 \
+                -DWEBVIEW_STATIC \
+                -c "$file" -o "$obj"
+          done
+
+          # Link binary
+          echo "Linking chainlang.exe..."
+          g++ -std=c++17 -O2 obj/*.o \
+              -L./lib/win_x86_64 \
+              -lraylib -lopengl32 -lgdi32 -lwinmm -lws2_32 \
+              -lole32 -loleaut32 -ladvapi32 -lversion -luuid -lshlwapi -lwebview2loader \
+              -static-libgcc -static-libstdc++ \
+              -o chainlang.exe
+
+          echo "Build finished successfully!"
 
       # ---------------------------------------------------------------
       # Verify Windows executable
