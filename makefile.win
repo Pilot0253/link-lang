@@ -1,3 +1,6 @@
+SHELL    := cmd.exe
+.SHELLFLAGS := /c
+
 CXX      := g++
 CXXFLAGS := -std=c++17 -Wall -Wextra -I./include -I./include/raylib -I./include/webview -DWEBVIEW_EDGE=1 -DWEBVIEW_STATIC
 LDFLAGS  := -L./lib/win_x86_64 -lraylib -lopengl32 -lgdi32 -lwinmm -lws2_32 -lole32 -loleaut32 -ladvapi32 -lversion -luuid -lshlwapi -lwebview2loader -static-libgcc -static-libstdc++
@@ -18,11 +21,11 @@ build: $(TARGET)
 
 $(TARGET): $(OBJS)
 	@echo Linking $(TARGET)...
-	@$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@ 2>> error.txt && (echo Build successful!) || (echo Build failed -- see error.txt && exit 1)
+	@$(CXX) $(CXXFLAGS) $^ $(LDFLAGS) -o $@
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
 	@echo Compiling $<...
-	@$(CXX) $(CXXFLAGS) -c $< -o $@ 2>> error.txt
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR):
 	@if not exist $(OBJDIR) mkdir $(OBJDIR)
