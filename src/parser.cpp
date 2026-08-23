@@ -683,7 +683,7 @@ std::unique_ptr<Stmt> Parser::parseClass() {
             continue;
         }
         
-        if (match(TokenType::FUNC)) { 
+        if (match(TokenType::FUNC) || peek().type == TokenType::INIT) { 
             methods.push_back(parseFunc()); 
         } else { 
             advance(); 

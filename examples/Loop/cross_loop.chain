@@ -1,0 +1,29 @@
+class Node {
+    init(name) {
+        set this.name = name
+        set this.friend = 0
+    }
+}
+
+func makeGarbage() {
+    # Create 2 objects
+    set nodeA = new Node("A")
+    set nodeB = new Node("B")
+
+    # Create cyclic reference
+    set nodeA.friend = nodeB
+    set nodeB.friend = nodeA
+    
+    # When this function finishes, nodeA and nodeB become "garbage"
+    # that cannot be accessed, but hold onto each other.
+}
+
+print("Starting Garbage Collector Stress Test...")
+
+set i = 0
+while i < 1000000 {
+    makeGarbage()
+    set i = i + 1
+}
+
+print("Finished! If your computer's RAM is not full, the GC worked successfully!")

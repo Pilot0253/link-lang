@@ -81,8 +81,12 @@ static std::random_device rd;
 static std::mt19937 gen(rd()); 
 
 Runtime::Runtime() {
-    globalEnv = std::make_shared<Environment>();
+    globalEnv = gc.allocate<Environment>(nullptr);
     currentEnv = globalEnv;
+
+    gc.roots.push_back(&globalEnv);
+    gc.roots.push_back(&currentEnv);
+
     initNativeFunctions(); 
 }
 
@@ -114,26 +118,26 @@ std::string Runtime::objToString(const Obj& val) {
         return std::get<bool>(val.as) ? "true" : "false";
     }
     
-    if (std::holds_alternative<std::shared_ptr<List>>(val.as)) {
-        auto list = std::get<std::shared_ptr<List>>(val.as);
+    if (std::holds_alternative<ChainList*>(val.as)) {
+        auto list = std::get<ChainList*>(val.as);
         std::string res = "[";
-        for (size_t i = 0; i < list->size(); ++i) {
-            if (std::holds_alternative<std::string>((*list)[i].as)) res += "\"" + objToString((*list)[i]) + "\"";
-            else res += objToString((*list)[i]);
-            if (i < list->size() - 1) res += ", ";
+        for (size_t i = 0; i < list->elements.size(); ++i) {
+            if (std::holds_alternative<std::string>(list->elements[i].as)) res += "\"" + objToString(list->elements[i]) + "\"";
+            else res += objToString(list->elements[i]);
+            if (i < list->elements.size() - 1) res += ", ";
         }
         res += "]";
         return res;
     }
-    if (std::holds_alternative<std::shared_ptr<Dict>>(val.as)) {
-        auto dict = std::get<std::shared_ptr<Dict>>(val.as);
+    if (std::holds_alternative<ChainDict*>(val.as)) {
+        auto dict = std::get<ChainDict*>(val.as);
         std::string res = "{";
         int i = 0;
-        for (const auto& pair : *dict) {
+        for (const auto& pair : dict->map) {
             res += "\"" + pair.first + "\": ";
             if (std::holds_alternative<std::string>(pair.second.as)) res += "\"" + objToString(pair.second) + "\"";
             else res += objToString(pair.second);
-            if (i < (int)dict->size() - 1) res += ", ";
+            if (i < (int)dict->map.size() - 1) res += ", ";
             i++;
         }
         res += "}";
@@ -397,10 +401,10 @@ void Runtime::initNativeFunctions() {
         if (!args.empty() && std::holds_alternative<std::string>(args[0].as)) {
             path = std::get<std::string>(args[0].as);
         }
-        auto list = std::make_shared<List>();
+        auto list = gc.allocate<ChainList>();
         try {
             for (const auto& entry : fs::directory_iterator(path)) {
-                list->push_back(Value(entry.path().filename().string()));
+                list->elements.push_back(Value(entry.path().filename().string()));
             }
         } catch(...) {}
         return Obj(list);
@@ -427,10 +431,10 @@ void Runtime::initNativeFunctions() {
         if (args.empty()) return Obj(0);
         if (std::holds_alternative<std::string>(args[0].as)) 
             return Obj((int)std::get<std::string>(args[0].as).length());
-        if (std::holds_alternative<std::shared_ptr<List>>(args[0].as))
-            return Obj((int)std::get<std::shared_ptr<List>>(args[0].as)->size());
-         if (std::holds_alternative<std::shared_ptr<Dict>>(args[0].as))
-            return Obj((int)std::get<std::shared_ptr<Dict>>(args[0].as)->size());
+        if (std::holds_alternative<ChainList*>(args[0].as))
+            return Obj((int)std::get<ChainList*>(args[0].as)->elements.size());
+         if (std::holds_alternative<ChainDict*>(args[0].as))
+            return Obj((int)std::get<ChainDict*>(args[0].as)->map.size());
         return Obj(0);
     };
 
@@ -474,10 +478,10 @@ void Runtime::initNativeFunctions() {
     };
     
     nativeRegistry["str.split"] = [this](const std::vector<Obj>& args) -> Obj {
-        if (args.size() < 2) return Obj(std::make_shared<List>());
+        if (args.size() < 2) return Obj(gc.allocate<ChainList>());
         auto vec = SysString::split(objToString(args[0]), objToString(args[1]));
-        auto list = std::make_shared<List>();
-        for(const auto& v : vec) list->push_back(Value(v));
+        auto list = gc.allocate<ChainList>();
+        for(const auto& v : vec) list->elements.push_back(Value(v));
         return Obj(list);
     };
 
@@ -521,11 +525,11 @@ void Runtime::initNativeFunctions() {
 
     nativeRegistry["str.merge"] = [this](const std::vector<Obj>& args) -> Obj {
     if (args.size() < 2) return Obj("");
-    if (!std::holds_alternative<std::shared_ptr<List>>(args[0].as)) return Obj("");
-    auto listPtr = std::get<std::shared_ptr<List>>(args[0].as);
+    if (!std::holds_alternative<ChainList*>(args[0].as)) return Obj("");
+    auto listPtr = std::get<ChainList*>(args[0].as);
     std::string delimiter = objToString(args[1]);
     std::vector<std::string> strList;
-    for (const auto& item : *listPtr) {
+    for (const auto& item : listPtr->elements) {
         strList.push_back(objToString(item));
     }
 
@@ -613,11 +617,11 @@ void Runtime::initNativeFunctions() {
     // ==========================================
     nativeRegistry["list.pop"] = [](const std::vector<Obj>& args) -> Obj {
         if (args.empty()) return Obj();
-        if (std::holds_alternative<std::shared_ptr<List>>(args[0].as)) {
-            auto list = std::get<std::shared_ptr<List>>(args[0].as);
-            if (!list->empty()) {
-                Obj last = list->back();
-                list->pop_back();
+        if (std::holds_alternative<ChainList*>(args[0].as)) {
+            auto list = std::get<ChainList*>(args[0].as);
+            if (!list->elements.empty()) {
+                Obj last = list->elements.back();
+                list->elements.pop_back();
                 return last;
             }
         }
@@ -626,8 +630,8 @@ void Runtime::initNativeFunctions() {
     nativeRegistry["range"] = [](const std::vector<Obj>& args) -> Obj {
         int limit = 0;
         if (!args.empty() && std::holds_alternative<int>(args[0].as)) limit = std::get<int>(args[0].as);
-        auto list = std::make_shared<List>();
-        for(int i=0; i<limit; i++) list->push_back(Value(i));
+        auto list = gc.allocate<ChainList>();
+        for(int i=0; i<limit; i++) list->elements.push_back(Value(i));
         return Obj(list);
     };
     nativeRegistry["term.clear"] = [](const std::vector<Obj>& args) -> Obj {
@@ -675,18 +679,18 @@ void Runtime::initNativeFunctions() {
         return Obj(0);
     };
     nativeRegistry["list.add"] = [](const std::vector<Obj>& args) -> Obj {
-        if (args.size() >= 2 && std::holds_alternative<std::shared_ptr<List>>(args[0].as)) {
-            std::get<std::shared_ptr<List>>(args[0].as)->push_back(args[1]);
+        if (args.size() >= 2 && std::holds_alternative<ChainList*>(args[0].as)) {
+            std::get<ChainList*>(args[0].as)->elements.push_back(args[1]);
         }
         return Obj(0);
     };
         nativeRegistry["list.insert"] = [](const std::vector<Obj>& args) -> Obj {
-        if (args.size() >= 3 && std::holds_alternative<std::shared_ptr<List>>(args[0].as) && 
+        if (args.size() >= 3 && std::holds_alternative<ChainList*>(args[0].as) && 
             std::holds_alternative<int>(args[1].as)) {
-            auto list = std::get<std::shared_ptr<List>>(args[0].as);
+            auto list = std::get<ChainList*>(args[0].as);
             int idx = std::get<int>(args[1].as);
-            if (idx >= 0 && idx <= (int)list->size()) {
-                list->insert(list->begin() + idx, args[2]);
+            if (idx >= 0 && idx <= (int)list->elements.size()) {
+                list->elements.insert(list->elements.begin() + idx, args[2]);
                 return Obj(true);
             }
         }
@@ -694,12 +698,12 @@ void Runtime::initNativeFunctions() {
     };
 
     nativeRegistry["list.remove"] = [](const std::vector<Obj>& args) -> Obj {
-        if (args.size() >= 2 && std::holds_alternative<std::shared_ptr<List>>(args[0].as) && 
+        if (args.size() >= 2 && std::holds_alternative<ChainList*>(args[0].as) && 
             std::holds_alternative<int>(args[1].as)) {
-            auto list = std::get<std::shared_ptr<List>>(args[0].as);
+            auto list = std::get<ChainList*>(args[0].as);
             int idx = std::get<int>(args[1].as);
-            if (idx >= 0 && idx < (int)list->size()) {
-                list->erase(list->begin() + idx);
+            if (idx >= 0 && idx < (int)list->elements.size()) {
+                list->elements.erase(list->elements.begin() + idx);
                 return Obj(true);
             }
         }
@@ -710,32 +714,32 @@ void Runtime::initNativeFunctions() {
     // 8. DICTIONARY FUNCTION ADDED
     // ==========================================
     nativeRegistry["dict.keys"] = [](const std::vector<Obj>& args) -> Obj {
-        if (args.empty()) return Obj(std::make_shared<List>());
-        if (std::holds_alternative<std::shared_ptr<Dict>>(args[0].as)) {
-            auto dict = std::get<std::shared_ptr<Dict>>(args[0].as);
-            auto list = std::make_shared<List>();
-            for (const auto& pair : *dict) {
-                list->push_back(Value(pair.first)); 
+        if (args.empty()) return Obj(gc.allocate<ChainList>());
+        if (std::holds_alternative<ChainDict*>(args[0].as)) {
+            auto dict = std::get<ChainDict*>(args[0].as);
+            auto list = gc.allocate<ChainList>();
+            for (const auto& pair : dict->map) {
+                list->elements.push_back(Value(pair.first)); 
             }
             return Obj(list);
         }
-        return Obj(std::make_shared<List>());
+        return Obj(gc.allocate<ChainList>());
     };
 
     nativeRegistry["dict.has"] = [this](const std::vector<Obj>& args) -> Obj {
-        if (args.size() >= 2 && std::holds_alternative<std::shared_ptr<Dict>>(args[0].as)) {
-            auto dict = std::get<std::shared_ptr<Dict>>(args[0].as);
+        if (args.size() >= 2 && std::holds_alternative<ChainDict*>(args[0].as)) {
+            auto dict = std::get<ChainDict*>(args[0].as);
             std::string key = objToString(args[1]);
-            return Obj(dict->find(key) != dict->end());
+            return Obj(dict->map.find(key) != dict->map.end());
         }
         return Obj(false);
     };
 
     nativeRegistry["dict.remove"] = [this](const std::vector<Obj>& args) -> Obj {
-        if (args.size() >= 2 && std::holds_alternative<std::shared_ptr<Dict>>(args[0].as)) {
-            auto dict = std::get<std::shared_ptr<Dict>>(args[0].as);
+        if (args.size() >= 2 && std::holds_alternative<ChainDict*>(args[0].as)) {
+            auto dict = std::get<ChainDict*>(args[0].as);
             std::string key = objToString(args[1]);
-            return Obj(dict->erase(key) > 0); 
+            return Obj(dict->map.erase(key) > 0); 
         }
         return Obj(false);
     };
@@ -1097,8 +1101,8 @@ void Runtime::initNativeFunctions() {
 
         Obj callee = args[0];
  
-        if (std::holds_alternative<std::shared_ptr<LinkFunction>>(callee.as)) {
-            auto funcObj = std::get<std::shared_ptr<LinkFunction>>(callee.as);
+        if (std::holds_alternative<LinkFunction*>(callee.as)) {
+            auto funcObj = std::get<LinkFunction*>(callee.as);
   
             std::vector<Obj> threadArgs;
             for (size_t i = 1; i < args.size(); i++) {
@@ -1108,7 +1112,7 @@ void Runtime::initNativeFunctions() {
             std::thread t([this, funcObj, threadArgs]() {
                 Runtime threadRt;
                 threadRt.globalEnv = this->globalEnv;
-                threadRt.currentEnv = std::make_shared<Environment>(funcObj->closure); 
+                threadRt.currentEnv = gc.allocate<Environment>(funcObj->closure);
                 threadRt.nativeRegistry = this->nativeRegistry; 
                 
                 FuncDecl* fn = funcObj->declaration;
@@ -1199,7 +1203,7 @@ FuncDecl* Runtime::findMethod(LinkClass* klass, const std::string& name) {
         return dynamic_cast<FuncDecl*>(klass->methods[name]);
     }
     if (klass->superclass) {
-        return findMethod(klass->superclass.get(), name);
+        return findMethod(klass->superclass, name);
     }
     return nullptr;
 }
@@ -1225,16 +1229,16 @@ Obj Runtime::evaluateExpr(Expr* expr) {
     // 2. DATA STRUCTURES 
     // ==================
     if (auto arr = dynamic_cast<ArrayExpr*>(expr)) {
-        auto list = std::make_shared<List>();
-        for (auto& el : arr->elements) list->push_back(evaluateExpr(el.get()));
+        auto list = gc.allocate<ChainList>();
+        for (auto& el : arr->elements) list->elements.push_back(evaluateExpr(el.get()));
         return Obj(list);
     }
     if (auto dictNode = dynamic_cast<DictExpr*>(expr)) {
-        auto dict = std::make_shared<Dict>();
+        auto dict = gc.allocate<ChainDict>();
         for (auto& p : dictNode->pairs) {
             Obj key = evaluateExpr(p.first.get());
             Obj val = evaluateExpr(p.second.get());
-            if (std::holds_alternative<std::string>(key.as)) (*dict)[std::get<std::string>(key.as)] = val;
+            if (std::holds_alternative<std::string>(key.as)) dict->map[std::get<std::string>(key.as)] = val;
             else std::cout << "Runtime Error: Dict key must be string.\n";
         }
         return Obj(dict);
@@ -1246,15 +1250,15 @@ Obj Runtime::evaluateExpr(Expr* expr) {
     if (auto idx = dynamic_cast<IndexExpr*>(expr)) {
         Obj object = evaluateExpr(idx->object.get());
         Obj index = evaluateExpr(idx->index.get());
-        if (std::holds_alternative<std::shared_ptr<List>>(object.as) && std::holds_alternative<int>(index.as)) {
-            auto list = std::get<std::shared_ptr<List>>(object.as);
+        if (std::holds_alternative<ChainList*>(object.as) && std::holds_alternative<int>(index.as)) {
+            auto list = std::get<ChainList*>(object.as);
             int i = std::get<int>(index.as);
-            if (i < 0) i += list->size(); 
-            if (i >= 0 && i < (int)list->size()) return (*list)[i];
-        } else if (std::holds_alternative<std::shared_ptr<Dict>>(object.as) && std::holds_alternative<std::string>(index.as)) {
-            auto dict = std::get<std::shared_ptr<Dict>>(object.as);
+            if (i < 0) i += list->elements.size(); 
+            if (i >= 0 && i < (int)list->elements.size()) return list->elements[i];
+        } else if (std::holds_alternative<ChainDict*>(object.as) && std::holds_alternative<std::string>(index.as)) {
+            auto dict = std::get<ChainDict*>(object.as);
             std::string key = std::get<std::string>(index.as);
-            if (dict->count(key)) return (*dict)[key];
+            if (dict->map.count(key)) return dict->map[key];
         }
         return Obj();
     }
@@ -1264,19 +1268,19 @@ Obj Runtime::evaluateExpr(Expr* expr) {
     // ============
     if (auto newExpr = dynamic_cast<NewExpr*>(expr)) {
         Obj classObj = currentEnv->get(newExpr->className);
-        if (!std::holds_alternative<std::shared_ptr<LinkClass>>(classObj.as)) return Obj();
+        if (!std::holds_alternative<LinkClass* >(classObj.as)) return Obj();
 
-        auto klass = std::get<std::shared_ptr<LinkClass>>(classObj.as);
-        auto instance = std::make_shared<LinkInstance>();
+        auto klass = std::get<LinkClass* >(classObj.as);
+        auto instance = gc.allocate<LinkInstance>();
         instance->klass = klass;
 
-        FuncDecl* init = findMethod(klass.get(), "init");
+        FuncDecl* init = findMethod(klass, "init");
         if (init) {
             std::vector<Obj> args;
             for (auto& arg : newExpr->args) args.push_back(evaluateExpr(arg.get()));
 
             auto prevEnv = currentEnv;
-            currentEnv = std::make_shared<Environment>(globalEnv);
+            currentEnv = gc.allocate<Environment>(globalEnv);
             currentEnv->define("this", Obj(instance));
             for (size_t i = 0; i < init->params.size(); ++i) {
                  if (i < args.size()) currentEnv->define(init->params[i], args[i]);
@@ -1292,7 +1296,7 @@ Obj Runtime::evaluateExpr(Expr* expr) {
     if (dynamic_cast<ThisExpr*>(expr)) return currentEnv->get("this");
     
     if (auto lam = dynamic_cast<LambdaExpr*>(expr)) {
-        auto linkFunc = std::make_shared<LinkFunction>();
+        auto linkFunc = gc.allocate<LinkFunction>();
         linkFunc->declaration = lam->anonFunc.get();
         linkFunc->closure = currentEnv; 
         return Obj(linkFunc);
@@ -1300,15 +1304,15 @@ Obj Runtime::evaluateExpr(Expr* expr) {
 
     if (auto get = dynamic_cast<GetExpr*>(expr)) {
         Obj obj = evaluateExpr(get->object.get());
-        // 1. Check if it is an OOP instance
-        if (std::holds_alternative<std::shared_ptr<LinkInstance>>(obj.as)) {
-            auto instance = std::get<std::shared_ptr<LinkInstance>>(obj.as);
+
+        if (std::holds_alternative<LinkInstance*>(obj.as)) {
+            auto instance = std::get<LinkInstance*>(obj.as);
             if (instance->fields.count(get->name)) return instance->fields[get->name];
         }
-        // 2. Check if it is a Dictionary (NEW FEATURE)
-        if (std::holds_alternative<std::shared_ptr<Dict>>(obj.as)) {
-            auto dict = std::get<std::shared_ptr<Dict>>(obj.as);
-            if (dict->count(get->name)) return (*dict)[get->name];
+
+        if (std::holds_alternative<ChainDict*>(obj.as)) {
+            auto dict = std::get<ChainDict*>(obj.as);
+            if (dict->map.count(get->name)) return dict->map[get->name];
         }
         return Obj();
     }
@@ -1316,17 +1320,17 @@ Obj Runtime::evaluateExpr(Expr* expr) {
     if (auto set = dynamic_cast<SetExpr*>(expr)) {
         Obj obj = evaluateExpr(set->object.get());
         // 1. Check if it is an OOP instance
-        if (std::holds_alternative<std::shared_ptr<LinkInstance>>(obj.as)) {
-             auto instance = std::get<std::shared_ptr<LinkInstance>>(obj.as);
+        if (std::holds_alternative<LinkInstance*>(obj.as)) {
+             auto instance = std::get<LinkInstance*>(obj.as);
              Obj val = evaluateExpr(set->value.get());
              instance->fields[set->name] = val;
              return val;
         }
         // 2. Check if it is a Dictionary (NEW FEATURE)
-        if (std::holds_alternative<std::shared_ptr<Dict>>(obj.as)) {
-             auto dict = std::get<std::shared_ptr<Dict>>(obj.as);
+        if (std::holds_alternative<ChainDict*>(obj.as)) {
+             auto dict = std::get<ChainDict*>(obj.as);
              Obj val = evaluateExpr(set->value.get());
-             (*dict)[set->name] = val;
+             dict->map[set->name] = val;
              return val;
         }
         return Obj();
@@ -1334,16 +1338,16 @@ Obj Runtime::evaluateExpr(Expr* expr) {
 
     if (auto methodCall = dynamic_cast<MethodCallExpr*>(expr)) {
          Obj obj = evaluateExpr(methodCall->object.get());
-         if (!std::holds_alternative<std::shared_ptr<LinkInstance>>(obj.as)) return Obj();
-         auto instance = std::get<std::shared_ptr<LinkInstance>>(obj.as);
-         FuncDecl* method = findMethod(instance->klass.get(), methodCall->method);
+         if (!std::holds_alternative<LinkInstance*>(obj.as)) return Obj();
+         auto instance = std::get<LinkInstance*>(obj.as);
+         FuncDecl* method = findMethod(instance->klass, methodCall->method);
          if (!method) return Obj();
 
          std::vector<Obj> args;
          for (auto& arg : methodCall->args) args.push_back(evaluateExpr(arg.get()));
          
          auto prevEnv = currentEnv;
-         currentEnv = std::make_shared<Environment>(globalEnv);
+         currentEnv = gc.allocate<Environment>(globalEnv);
          currentEnv->define("this", Obj(instance));
          for (size_t i = 0; i < method->params.size(); ++i) {
              if (i < args.size()) currentEnv->define(method->params[i], args[i]);
@@ -1372,8 +1376,8 @@ Obj Runtime::evaluateExpr(Expr* expr) {
         
         // 2. Execute from environment variable (user-defined function)
         Obj callee = currentEnv->get(call->func);
-        if (std::holds_alternative<std::shared_ptr<LinkFunction>>(callee.as)) {
-            auto funcObj = std::get<std::shared_ptr<LinkFunction>>(callee.as);
+        if (std::holds_alternative<LinkFunction*>(callee.as)) {
+            auto funcObj = std::get<LinkFunction*>(callee.as);
             FuncDecl* fn = funcObj->declaration;
             
             if (args.size() != fn->params.size()) {
@@ -1382,8 +1386,7 @@ Obj Runtime::evaluateExpr(Expr* expr) {
             }
 
             auto previousEnv = currentEnv;
-            // New environment attaches to this function's closure
-            currentEnv = std::make_shared<Environment>(funcObj->closure);
+            currentEnv = gc.allocate<Environment>(funcObj->closure);
             
             for (size_t i = 0; i < fn->params.size(); ++i) {
                 currentEnv->define(fn->params[i], args[i]);
@@ -1411,8 +1414,8 @@ Obj Runtime::evaluateExpr(Expr* expr) {
             Obj left = evaluateExpr(bin->lhs.get());   
             Obj right = evaluateExpr(bin->rhs.get());  
             
-            if (std::holds_alternative<std::shared_ptr<LinkInstance>>(left.as)) {
-                auto instance = std::get<std::shared_ptr<LinkInstance>>(left.as);
+            if (std::holds_alternative<LinkInstance*>(left.as)) {
+                auto instance = std::get<LinkInstance*>(left.as);
                 std::string magicName = "";
                 if (bin->op == '+') magicName = "__add__";
                 else if (bin->op == '-') magicName = "__sub__";
@@ -1422,10 +1425,10 @@ Obj Runtime::evaluateExpr(Expr* expr) {
                 else if (bin->op == '=') magicName = "__eq__";
 
                 if (!magicName.empty()) {
-                    FuncDecl* method = findMethod(instance->klass.get(), magicName);
+                    FuncDecl* method = findMethod(instance->klass, magicName);
                     if (method) {
                         auto prevEnv = currentEnv;
-                        currentEnv = std::make_shared<Environment>(globalEnv);
+                        currentEnv = gc.allocate<Environment>(globalEnv);
                         currentEnv->define("this", left); 
                         if (method->params.size() > 0) currentEnv->define(method->params[0], right); 
                         
@@ -1518,12 +1521,12 @@ void Runtime::runStatement(Stmt* stmt) {
         Obj indexObj = evaluateExpr(setIdx->index.get());
         Obj val = evaluateExpr(setIdx->value.get());
 
-        if (std::holds_alternative<std::shared_ptr<List>>(listObj.as) && 
+        if (std::holds_alternative<ChainList*>(listObj.as) && 
             std::holds_alternative<int>(indexObj.as)) {
-            auto list = std::get<std::shared_ptr<List>>(listObj.as);
+            auto list = std::get<ChainList*>(listObj.as);
             int idx = std::get<int>(indexObj.as);
-            if (idx < 0) idx += list->size();
-            if (idx >= 0 && idx < (int)list->size()) (*list)[idx] = val;
+            if (idx < 0) idx += list->elements.size();
+            if (idx >= 0 && idx < (int)list->elements.size()) list->elements[idx] = val;
             else std::cout << "Runtime Error: Index out of bounds\n";
         }
         return;
@@ -1541,10 +1544,9 @@ void Runtime::runStatement(Stmt* stmt) {
             return;
         }
 
-        // Fetch function from environment variable
         Obj callee = currentEnv->get(call->func);
-        if (std::holds_alternative<std::shared_ptr<LinkFunction>>(callee.as)) {
-            auto funcObj = std::get<std::shared_ptr<LinkFunction>>(callee.as);
+        if (std::holds_alternative<LinkFunction*>(callee.as)) {
+            auto funcObj = std::get<LinkFunction*>(callee.as);
             FuncDecl* fn = funcObj->declaration;
             
             if (args.size() != fn->params.size()) {
@@ -1552,8 +1554,7 @@ void Runtime::runStatement(Stmt* stmt) {
             }
             
             auto prevEnv = currentEnv;
-            // New environment is parented to the function closure
-            currentEnv = std::make_shared<Environment>(funcObj->closure); 
+            currentEnv = gc.allocate<Environment>(funcObj->closure);
             
             for (size_t i = 0; i < fn->params.size(); ++i) {
                 currentEnv->define(fn->params[i], args[i]);
@@ -1583,7 +1584,10 @@ void Runtime::runStatement(Stmt* stmt) {
         
         while (isTruthy(evaluateExpr(whileLoop->condition.get()))) {
                 try {
-                    for (auto& s : whileLoop->body) runStatement(s.get());
+                    for (auto& s : whileLoop->body) {
+                        runStatement(s.get());
+                        gc.checkGC();
+                    }
                 } 
                 catch (const BreakException&) {
                     break; // Stop while loop C++
@@ -1598,31 +1602,37 @@ void Runtime::runStatement(Stmt* stmt) {
         ProfilerTimer timer("For Loop", enableProfiling);
         
         Obj collection = evaluateExpr(loop->collection.get());
-             if (std::holds_alternative<std::shared_ptr<List>>(collection.as)) {
-                 auto list = std::get<std::shared_ptr<List>>(collection.as);
-                 currentEnv->define(loop->iteratorName, Obj(0)); 
+        gc.pushTempRoot(&collection); 
 
-                 for (auto& item : *list) {
-                     currentEnv->assign(loop->iteratorName, item);
-                     try {
-                         for (auto& s : loop->body) runStatement(s.get());
-                     }
-                     catch (const BreakException&) {
-                         break; 
-                     }
-                     catch (const ContinueException&) {
-                         continue; 
-                     }
+        if (std::holds_alternative<ChainList*>(collection.as)) {
+             auto list = std::get<ChainList*>(collection.as);
+             currentEnv->define(loop->iteratorName, Obj(0)); 
+             
+             for (auto& item : list->elements) {
+                currentEnv->assign(loop->iteratorName, item);
+                try {
+                    for (auto& s : loop->body) {
+                      runStatement(s.get()); 
+                      gc.checkGC(); 
+                    }
+                }
+                 catch (const BreakException&) {
+                     break; 
+                 }
+                 catch (const ContinueException&) {
+                     continue; 
                  }
              }
-             return;
         }
+        gc.popTempRoot(); 
+        return;
+    }
     if (auto tryStmt = dynamic_cast<TryStmt*>(stmt)) {
             try {
                 for (auto& s : tryStmt->tryBody) runStatement(s.get());
             } catch (const RuntimeException& e) {
                 auto prevEnv = currentEnv;
-                currentEnv = std::make_shared<Environment>(prevEnv);
+                currentEnv = gc.allocate<Environment>(prevEnv);
                 currentEnv->define(tryStmt->errorVar, Obj(e.message));
                 for (auto& s : tryStmt->catchBody) runStatement(s.get());
                 currentEnv = prevEnv;
@@ -1643,7 +1653,7 @@ void Runtime::runStatement(Stmt* stmt) {
 
     // 5. DEFINITIONS
     if (auto func = dynamic_cast<FuncDecl*>(stmt)) {
-        auto linkFunc = std::make_shared<LinkFunction>();
+        auto linkFunc = gc.allocate<LinkFunction>();
         linkFunc->declaration = func;
         linkFunc->closure = currentEnv; 
         currentEnv->define(func->name, Obj(linkFunc)); 
@@ -1651,13 +1661,13 @@ void Runtime::runStatement(Stmt* stmt) {
     }
 
     if (auto cls = dynamic_cast<ClassDecl*>(stmt)) {
-        auto klass = std::make_shared<LinkClass>();
+        auto klass = gc.allocate<LinkClass>();
         klass->name = cls->name;
  
         if (!cls->superclass.empty()) {
             Obj superObj = currentEnv->get(cls->superclass);
-            if (std::holds_alternative<std::shared_ptr<LinkClass>>(superObj.as)) {
-                klass->superclass = std::get<std::shared_ptr<LinkClass>>(superObj.as);
+            if (std::holds_alternative<LinkClass* >(superObj.as)) {
+                klass->superclass = std::get<LinkClass* >(superObj.as);
             } else {
                 std::cout << "Runtime Error: Superclass '" << cls->superclass << "' not found.\n";
             }
@@ -1670,7 +1680,8 @@ void Runtime::runStatement(Stmt* stmt) {
 
     if (auto matchStmt = dynamic_cast<MatchStmt*>(stmt)) {
         Obj matchVal = evaluateExpr(matchStmt->value.get());
-        
+        gc.pushTempRoot(&matchVal); 
+
         for (auto& c : matchStmt->cases) {
             if (c.pattern == nullptr) { 
                 for (auto& s : c.body) runStatement(s.get());
@@ -1683,6 +1694,7 @@ void Runtime::runStatement(Stmt* stmt) {
                 break; 
             }
         }
+        gc.popTempRoot();
         return;
     }
 
@@ -1740,13 +1752,13 @@ void Runtime::runStatement(Stmt* stmt) {
         std::vector<std::string> double_vars;
         
         // Collect from current scope up to global
-        Environment* env_ptr = currentEnv.get();
+        Environment* env_ptr = currentEnv;
         std::unordered_map<std::string, Obj> all_vars;
         while (env_ptr) {
             for (const auto& [name, val] : env_ptr->values) {
                 if (all_vars.find(name) == all_vars.end()) all_vars[name] = val;
             }
-            env_ptr = env_ptr->enclosing.get();
+            env_ptr = env_ptr->enclosing;
         }
 
         // Separate into Int and Double
@@ -1849,5 +1861,6 @@ void Runtime::execute(std::unique_ptr<Program> program) {
     if (!program) return;
     for (auto& stmt : program->statements) {
         runStatement(stmt.get());
+        gc.checkGC();
     }
 }

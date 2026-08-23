@@ -2,13 +2,13 @@
 #include <iostream>
 
 void printVersion() {
-    std::cout << "Chain Version 0.7.1-beta (Beta Release) \n" << std::endl;
+    std::cout << "Chain Version 0.7.2 (Pre Release) \n" << std::endl;
 } 
 
 void printHelp() {
     std::cout << R"(
 ========================================================
-       NEBANIA CHAIN v0.7.1-beta (Beta Release) HELP
+       NEBANIA CHAIN v0.7.2 (Pre Release) HELP
 ========================================================
 History:
 Created by   : Pilot0253

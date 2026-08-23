@@ -1,5 +1,5 @@
 # Age Calculator
-set year_now = 2025
+set year_now = 2026
 set year_born = input("Insert your born year: ")
 
 set age = year_now - year_born

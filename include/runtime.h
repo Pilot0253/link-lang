@@ -18,8 +18,8 @@ using NativeFn = std::function<Obj(const std::vector<Obj>&)>;
 
 class Runtime {
 private:
-    std::shared_ptr<Environment> globalEnv;
-    std::shared_ptr<Environment> currentEnv;
+    Environment* globalEnv;
+    Environment* currentEnv;
     
     // Registry Map
     std::unordered_map<std::string, NativeFn> nativeRegistry;

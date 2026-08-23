@@ -1,16 +1,27 @@
 #pragma once
 #include "types.h"
+#include "gc.h" 
 #include <unordered_map>
 #include <string>
-#include <memory>
 #include <mutex> 
 
-struct Environment {
-    std::shared_ptr<Environment> enclosing;
+struct Environment : public GCObject {
+    Environment* enclosing; 
     std::unordered_map<std::string, Obj> values;
-    std::mutex envMutex; //MUTEX
+    std::mutex envMutex; 
 
-    Environment(std::shared_ptr<Environment> enc = nullptr) : enclosing(enc) {}
+    Environment(Environment* enc = nullptr) : enclosing(enc) {}
+
+    void trace() override {
+        if (enclosing) {
+            gc.markObject(enclosing);
+        }
+        
+        std::lock_guard<std::mutex> lock(envMutex);
+        for (auto& pair : values) {
+            gc.markValue(pair.second);
+        }
+    }
 
     void define(const std::string& name, Obj val) {
         std::lock_guard<std::mutex> lock(envMutex); 
@@ -34,7 +45,7 @@ struct Environment {
                 return;
             }
         }
-        
+
         if (enclosing) {
             enclosing->assign(name, val);
             return;

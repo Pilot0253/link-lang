@@ -8,6 +8,7 @@
 #include "runtime.h" 
 #include "help.h"
 #include "repl_core.h"
+#include "gc.h"
 
 bool isBlockStart(const std::string& line) {
     size_t start = line.find_first_not_of(" \t");
@@ -125,6 +126,11 @@ int main(int argc, char** argv) {
             timeMode = true;
         }
 
+        else if (arg == "--gc" || arg == "-gc") {
+            gc.debugGC = true;
+            flagsCount++;
+        }
+
         // Load a C++ runtime library
         else if (arg == "--crel") {
 
@@ -211,7 +217,7 @@ int main(int argc, char** argv) {
     }
     for(int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        if (arg != "--debug" && arg != "--time") {
+        if (arg != "--debug" && arg != "-d" && arg != "--time" && arg != "-t" && arg != "--gc" && arg != "-gc") {
             filename = arg;
             break;
         }
