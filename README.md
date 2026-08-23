@@ -170,5 +170,6 @@ prints a soft deprecation warning asking you to switch to .chain:**
 ```bash
 chainlang examples/hello.link
 ```
-```
+
+
 
